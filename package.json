@@ -7,10 +7,14 @@
     "start": "nodemon src/index.js"
   },
   "dependencies": {
+    "@langchain/core": "^0.3.13",
+    "@langchain/langgraph": "^0.2.17",
     "dotenv": "^16.4.5",
+    "groq-sdk": "^0.7.0",
     "telegraf": "^4.4.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.7"
+    "nodemon": "^3.1.7",
+    "prettier": "^3.3.3"
   }
 }
