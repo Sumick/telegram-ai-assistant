@@ -1,25 +1,41 @@
-const { Telegraf } = require("telegraf");
-const { Groq } = require("groq-sdk");
-const { assistantSystemPrompt } = require("./prompt/assistant-system.prompt");
-const { message } = require("telegraf/filters");
-require("dotenv").config();
+import { Telegraf } from "telegraf";
+import Groq from "groq-sdk";
+
+dotenv.config();
+
+import { assistantSystemPrompt } from "./prompt/assistant-system.prompt.js";
+import { message } from "telegraf/filters";
+import { queryData, upsertInput } from "./vector-db.js";
+import dotenv from "dotenv";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 bot.start((ctx) => ctx.reply("Welcome to your AI Assistant!"));
 
-bot.on("text", async (ctx) => {
+bot.on(message("text"), async (ctx) => {
+  const userMessage = ctx.message.text;
+
+  // Retrieve similar memories
+  const memories = await queryData(userMessage);
+
+  // Prepare context for the assistant prompt
+  const memoryContext = memories
+    .map(
+      (memory, index) =>
+        `Memory ${index + 1}: User said "${memory.userMessage}" and Assistant replied "${memory.botResponse}".`,
+    )
+    .join("\n");
+
+  console.log("Memory context:", memoryContext);
+
+  // Combine memory context with assistant prompt
+  const assistantPrompt = `${assistantSystemPrompt}\n\n${memoryContext}\n\n`;
+
   const aiResponse = await groq.chat.completions.create({
     messages: [
-      {
-        role: "system",
-        content: assistantSystemPrompt,
-      },
-      {
-        role: "user",
-        content: ctx.message.text,
-      },
+      { role: "system", content: assistantPrompt },
+      { role: "user", content: userMessage },
     ],
     model: "llama-3.2-90b-vision-preview",
   });
@@ -28,15 +44,13 @@ bot.on("text", async (ctx) => {
     aiResponse.choices[0]?.message?.content || "No response";
 
   ctx.reply(aiResponseText);
+
+  // Store the new interaction in vector DB
+  await upsertInput(userMessage, aiResponseText);
 });
 
 bot.on(message("photo"), async (ctx) => {
-  // Check and log the entire message object for debugging
-
-  // Attempt to get the image caption
   const imageCaption = ctx.message.caption || "No caption provided";
-
-  // Get the image object (largest available photo)
   const image = ctx.message.photo[ctx.message.photo.length - 1];
 
   const imageBaseUrl = await ctx.telegram.getFileLink(image.file_id);
@@ -46,7 +60,6 @@ bot.on(message("photo"), async (ctx) => {
     .then((res) => res.arrayBuffer())
     .then((buffer) => Buffer.from(buffer).toString("base64"));
 
-  // Create the user message with an array of content parts
   const userMessageContent = [
     {
       type: "text",
@@ -69,7 +82,7 @@ bot.on(message("photo"), async (ctx) => {
     ],
     model: "llama-3.2-90b-vision-preview",
   });
-
+  //
   const aiResponseText =
     aiResponse.choices[0]?.message?.content || "No response";
 
